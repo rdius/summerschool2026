@@ -1,261 +1,718 @@
-"""
-╔══════════════════════════════════════════════════════════════════════╗
-║  CITADEL · Summer School 2025 · TP Déploiement — Phase 1           ║
-║  Fichier : 02_serve.py                                              ║
-║  Objectif : Exposer le modèle entraîné via une API REST (FastAPI)   ║
-╚══════════════════════════════════════════════════════════════════════╝
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CITASC2026</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
 
-Contexte
---------
-Votre modèle est entraîné et sauvegardé dans model/sentiment/.
-Maintenant il faut le rendre accessible : n'importe qui doit pouvoir
-envoyer un texte et recevoir une prédiction, sans avoir Python installé.
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-La solution : une API REST. Un client envoie une requête HTTP avec
-le texte en JSON, l'API retourne la prédiction en JSON.
-
-Instructions
-------------
-Complétez les TODO dans l'ordre.
-Prérequis : avoir exécuté 01_train.py avec succès.
-
-Usage:
-    uvicorn 02_serve:app --host 0.0.0.0 --port 8000 --reload
-    Puis ouvrir : http://localhost:8000/docs
-"""
-
-import json
-import pickle
-from pathlib import Path
-from contextlib import asynccontextmanager
-
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
-
-# ── Chemin vers le modèle sauvegardé ─────────────────────────────────────────
-MODEL_DIR = Path(__file__).parent / "model" / "sentiment"
-
-# ── État global — chargé UNE FOIS au démarrage ───────────────────────────────
-# Pourquoi global ? Charger un modèle prend 100-200ms.
-# Si on le chargeait à chaque requête, l'API serait 10x plus lente.
-state = {}
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# ÉTAPE 1 — Charger le modèle au démarrage
-# ══════════════════════════════════════════════════════════════════════════════
-
-def charger_modele():
-    """
-    Charger le vectoriseur, le classifieur et les métadonnées depuis MODEL_DIR.
-
-    Les trois fichiers à charger :
-        model/sentiment/vectorizer.pkl  → avec pickle.load()
-        model/sentiment/classifier.pkl  → avec pickle.load()
-        model/sentiment/meta.json       → avec json.loads()
-
-    Stockez tout dans le dictionnaire global `state` :
-        state["vectoriseur"] = ...
-        state["classifieur"] = ...
-        state["classes"]     = meta["classes"]   # ["négatif", "positif"]
-        state["meta"]        = meta
-    """
-    meta_path = MODEL_DIR / "meta.json"
-    if not meta_path.exists():
-        raise RuntimeError(
-            f"Modèle introuvable dans {MODEL_DIR}/\n"
-            "→ Lancez d'abord : python 01_train.py"
-        )
-
-    # Charger les métadonnées JSON
-    meta = json.loads(meta_path.read_text(encoding="utf-8"))
-
-    # Charger le vectoriseur avec pickle
-    with open(MODEL_DIR / "vectorizer.pkl", "rb") as f:
-        state["vectoriseur"] = pickle.load(f)
-
-    # Charger le classifieur avec pickle
-    with open(MODEL_DIR / "classifier.pkl", "rb") as f:
-        state["classifieur"] = pickle.load(f)
-
-    # Stocker les métadonnées dans state
-    state["meta"]    = meta
-    state["classes"] = meta["classes"]
-
-    print(f"✓ Modèle chargé : {meta['type']} (accuracy: {meta['accuracy']:.1%})")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# ÉTAPE 2 — Fonction de prédiction
-# ══════════════════════════════════════════════════════════════════════════════
-
-def predire(texte: str) -> dict:
-    """
-    Prédire le sentiment d'un texte à partir du modèle chargé.
-
-    Pipeline de prédiction :
-        1. Vectoriser le texte avec state["vectoriseur"].transform([texte])
-           ⚠️ .transform() et non .fit_transform() — on utilise le vocabulaire appris
-        2. Prédire le label avec state["classifieur"].predict(X)
-        3. Obtenir les probabilités avec .predict_proba(X)
-        4. Construire et retourner le dictionnaire résultat
-
-    Paramètres :
-        texte : str — le texte à analyser
-
-    Retourne :
-        dict avec les clés :
-            "label"   : str  — "positif" ou "négatif"
-            "score"   : float — probabilité entre 0 et 1 (arrondie à 4 décimales)
-            "positif" : bool  — True si positif
-    """
-    vec = state["vectoriseur"]
-    clf = state["classifieur"]
-
-    # Vectoriser le texte — liste d'UN seul élément, vocabulaire figé
-    X = vec.transform([texte])
-
-    # Prédire le label (0 ou 1)
-    label_id = clf.predict(X)[0]
-
-    # Obtenir la probabilité de la classe prédite
-    # predict_proba retourne [[prob_négatif, prob_positif]]
-    proba = clf.predict_proba(X)
-    score = float(proba[0][label_id])
-
-    # Récupérer le nom de la classe : state["classes"] = ["négatif", "positif"]
-    label = state["classes"][label_id]
-
-    return {
-        "label":   label,
-        "score":   round(score, 4),
-        "positif": label == "positif",
+    :root {
+      --bg:        #0D0F14;
+      --surface:   #181B24;
+      --border:    #2A2D38;
+      --text:      #E8EAF0;
+      --muted:     #6B7280;
+      --pos:       #00E5A0;
+      --neg:       #FF4D6A;
+      --neutral:   #4A90D9;
+      --accent:    #00E5A0;
+      --font-d:    'Space Grotesk', sans-serif;
+      --font-b:    'Inter', sans-serif;
     }
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# ÉTAPE 3 — Cycle de vie de l'application (chargement au démarrage)
-# ══════════════════════════════════════════════════════════════════════════════
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """
-    Gestionnaire de cycle de vie FastAPI.
-    Le code AVANT le `yield` s'exécute au démarrage.
-    Le code APRÈS le `yield` s'exécute à l'arrêt.
-    """
-    print("\n" + "=" * 50)
-    print("  CITADEL · Sentiment API — Démarrage")
-    print("=" * 50)
-
-    # Charger le modèle en mémoire une seule fois au démarrage
-    charger_modele()
-
-    print("\n  API prête sur http://0.0.0.0:8000")
-    print("    → /docs  pour tester interactivement")
-    print("    → /app   pour l'interface web\n")
-
-    yield  # L'application tourne ici
-
-    print("API arrêtée.")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# ÉTAPE 4 — Définir l'application et les endpoints
-# ══════════════════════════════════════════════════════════════════════════════
-
-app = FastAPI(
-    title="CITADEL · Sentiment API",
-    description="Classificateur de sentiment en français — TP Déploiement Phase 1",
-    version="1.0.0",
-    lifespan=lifespan,
-    swagger_ui_parameters={"syntaxHighlight": False},
-)
-
-# Autoriser les appels depuis le navigateur (interface web)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-# ── Schémas de données ────────────────────────────────────────────────────────
-
-class TexteEntree(BaseModel):
-    """Corps de la requête POST /predict"""
-    texte: str   # Le texte à analyser
-
-
-class PredictionSortie(BaseModel):
-    """Corps de la réponse"""
-    texte:   str
-    label:   str
-    score:   float
-    positif: bool
-    modele:  str
-
-
-# ── Endpoints ─────────────────────────────────────────────────────────────────
-
-@app.post("/predict", response_model=PredictionSortie)
-def predire_sentiment(corps: TexteEntree):
-    """
-    Analyser le sentiment d'un texte en français.
-    """
-    # Valider l'entrée : refuser un texte vide ou uniquement des espaces
-    if not corps.texte.strip():
-        raise HTTPException(status_code=400, detail="Le texte ne peut pas être vide.")
-
-    # Appeler predire() et récupérer le résultat
-    resultat = predire(corps.texte)
-
-    # Retourner la réponse — **resultat dépaquète label, score, positif
-    return PredictionSortie(
-        texte=corps.texte,
-        modele=state["meta"]["type"],
-        **resultat,
-    )
-
-
-@app.get("/health")
-def etat():
-    """
-    Retourner l'état du service.
-    """
-    return {
-        "status":   "ok",
-        "modele":   state["meta"]["type"],
-        "accuracy": state["meta"]["accuracy"],
-        "classes":  state["classes"],
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-b);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
     }
 
-
-@app.get("/app", response_class=HTMLResponse)
-def interface():
-    """Servir l'interface web."""
-    html = Path(__file__).parent / "app" / "index.html"
-    if html.exists():
-        return HTMLResponse(content=html.read_text(encoding="utf-8"))
-    return HTMLResponse(
-        "<h3>Interface introuvable — créez app/index.html (Étape bonus)</h3>",
-        status_code=404
-    )
-
-
-@app.get("/")
-def accueil():
-    """Page d'accueil avec la liste des endpoints."""
-    return {
-        "service": "CITADEL Sentiment API",
-        "endpoints": {
-            "POST /predict": "Analyser un texte",
-            "GET  /health" : "État du modèle en production",
-            "GET  /app"    : "Interface web",
-            "GET  /docs"   : "Documentation interactive Swagger",
-        },
+    /*  Header  */
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 1.25rem 2rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
     }
-    
+
+    .logo-mark {
+      width: 32px;
+      height: 32px;
+      border: 2px solid var(--accent);
+      display: grid;
+      place-items: center;
+      font-family: var(--font-d);
+      font-weight: 700;
+      font-size: 0.75rem;
+      letter-spacing: 0.05em;
+      color: var(--accent);
+    }
+
+    .logo-text {
+      font-family: var(--font-d);
+      font-size: 0.85rem;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .logo-text span {
+      color: var(--text);
+    }
+
+    .header-badge {
+      margin-left: auto;
+      font-family: var(--font-d);
+      font-size: 0.7rem;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      padding: 0.25rem 0.6rem;
+      text-transform: uppercase;
+    }
+
+    /*  Main  */
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 4rem 1.5rem 3rem;
+      gap: 0;
+    }
+
+    /*  Hero  */
+    .hero {
+      text-align: center;
+      max-width: 560px;
+      margin-bottom: 3.5rem;
+    }
+
+    .hero-eyebrow {
+      font-family: var(--font-d);
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 1.25rem;
+    }
+
+    .hero h1 {
+      font-family: var(--font-d);
+      font-size: clamp(2rem, 5vw, 3rem);
+      font-weight: 700;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      margin-bottom: 1rem;
+    }
+
+    .hero p {
+      font-size: 0.95rem;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    /*  Card  */
+    .card {
+      width: 100%;
+      max-width: 680px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 2rem;
+    }
+
+    /*  Textarea  */
+    .field-label {
+      font-family: var(--font-d);
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+      display: block;
+    }
+
+    textarea {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--font-b);
+      font-size: 1rem;
+      line-height: 1.65;
+      padding: 1rem 1.25rem;
+      resize: vertical;
+      min-height: 130px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    textarea::placeholder { color: var(--muted); }
+
+    textarea:focus {
+      border-color: var(--accent);
+    }
+
+    /*  Exemples  */
+    .exemples {
+      margin-top: 0.75rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .ex-label {
+      font-family: var(--font-d);
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      align-self: center;
+      margin-right: 0.25rem;
+    }
+
+    .exemple-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-family: var(--font-b);
+      font-size: 0.78rem;
+      padding: 0.3rem 0.75rem;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    .exemple-btn:hover {
+      border-color: var(--accent);
+      color: var(--text);
+    }
+
+    /*  Bouton analyser  */
+    .btn-analyze {
+      margin-top: 1.5rem;
+      width: 100%;
+      background: transparent;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-family: var(--font-d);
+      font-size: 0.85rem;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      padding: 0.9rem;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    .btn-analyze:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .btn-analyze:not(:disabled):hover {
+      background: var(--accent);
+      color: var(--bg);
+    }
+
+    /* Scan line animée */
+    .btn-analyze.scanning::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(0,229,160,0.3), transparent);
+      animation: scan 0.7s ease-in-out;
+    }
+
+    @keyframes scan {
+      from { left: -100%; }
+      to   { left: 100%; }
+    }
+
+    /*  Résultat  */
+    .result-wrapper {
+      width: 100%;
+      max-width: 680px;
+      margin-top: 1.5rem;
+      overflow: hidden;
+      max-height: 0;
+      transition: max-height 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .result-wrapper.visible {
+      max-height: 400px;
+    }
+
+    .result-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-top: none;
+      padding: 1.75rem 2rem;
+    }
+
+    .result-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.5rem;
+    }
+
+    .result-verdict {
+      font-family: var(--font-d);
+      font-size: 1.75rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      transition: color 0.3s;
+    }
+
+    .result-verdict.pos { color: var(--pos); }
+    .result-verdict.neg { color: var(--neg); }
+
+    .result-score-box {
+      text-align: right;
+    }
+
+    .score-value {
+      font-family: var(--font-d);
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1;
+    }
+
+    .score-label {
+      font-size: 0.7rem;
+      font-family: var(--font-d);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-top: 0.2rem;
+    }
+
+    /*  Barre de confiance (signature)  */
+    .confidence-track {
+      height: 6px;
+      background: var(--border);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .confidence-fill {
+      height: 100%;
+      width: 0%;
+      transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1), background 0.3s;
+    }
+
+    .confidence-fill.pos { background: var(--pos); }
+    .confidence-fill.neg { background: var(--neg); }
+
+    .confidence-meta {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 0.5rem;
+      font-size: 0.7rem;
+      font-family: var(--font-d);
+      color: var(--muted);
+      letter-spacing: 0.05em;
+    }
+
+    /*  Historique  */
+    .history-section {
+      width: 100%;
+      max-width: 680px;
+      margin-top: 2.5rem;
+    }
+
+    .history-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 1rem;
+    }
+
+    .history-title {
+      font-family: var(--font-d);
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .clear-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-family: var(--font-d);
+      font-size: 0.7rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: color 0.15s;
+    }
+    .clear-btn:hover { color: var(--neg); }
+
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .history-item {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.75rem 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left-width: 3px;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+
+    .history-item.pos { border-left-color: var(--pos); }
+    .history-item.neg { border-left-color: var(--neg); }
+    .history-item:hover { border-color: var(--muted); border-left-color: inherit; }
+
+    .history-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .history-dot.pos { background: var(--pos); }
+    .history-dot.neg { background: var(--neg); }
+
+    .history-text {
+      flex: 1;
+      font-size: 0.85rem;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .history-pct {
+      font-family: var(--font-d);
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    /*  Erreur  */
+    .error-msg {
+      width: 100%;
+      max-width: 680px;
+      margin-top: 1rem;
+      padding: 0.85rem 1.25rem;
+      border: 1px solid var(--neg);
+      background: rgba(255, 77, 106, 0.08);
+      color: var(--neg);
+      font-family: var(--font-d);
+      font-size: 0.82rem;
+      display: none;
+    }
+
+    .error-msg.visible { display: block; }
+
+    /*  Footer  */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 1.25rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    .footer-info {
+      font-family: var(--font-d);
+      font-size: 0.7rem;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--muted);
+      margin-right: 0.4rem;
+      vertical-align: middle;
+      transition: background 0.3s;
+    }
+    .status-dot.online { background: var(--pos); }
+    .status-dot.offline { background: var(--neg); }
+
+    @media (max-width: 600px) {
+      main { padding: 2.5rem 1rem; }
+      .card, .result-card { padding: 1.25rem; }
+      .hero h1 { font-size: 1.75rem; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * { transition: none !important; animation: none !important; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo-mark">CT</div>
+  <div class="logo-text"><span>CITASC</span>2026</div>
+</header>
+
+<main>
+  <div class="hero">
+    <h1>Analyse de sentiment</h1>
+  </div>
+
+  <div class="card">
+    <label class="field-label" for="input-texte">Texte à analyser</label>
+    <textarea
+      id="input-texte"
+      placeholder="Ex : Ce produit est excellent, je suis très satisfait de ma commande…"
+      rows="5"
+    ></textarea>
+
+    <div class="exemples">
+      <span class="ex-label">Essayer</span>
+      <button class="exemple-btn" data-txt="Ce service est excellent, je suis très satisfait !">Positif 1</button>
+      <button class="exemple-btn" data-txt="Produit inutilisable, retour impossible, argent perdu.">Negatif 1</button>
+      <button class="exemple-btn" data-txt="Livraison rapide et emballage soigné, je recommande.">Positif 2</button>
+      <button class="exemple-btn" data-txt="Arnaque totale, je déconseille fortement ce vendeur.">Negatif 2</button>
+    </div>
+
+    <button class="btn-analyze" id="btn-analyze">Analyser le sentiment</button>
+  </div>
+
+  <div class="error-msg" id="error-msg"></div>
+
+  <div class="result-wrapper" id="result-wrapper">
+    <div class="result-card">
+      <div class="result-header">
+        <div class="result-verdict" id="result-verdict">—</div>
+        <div class="result-score-box">
+          <div class="score-value" id="score-value">—</div>
+          <div class="score-label">Confiance</div>
+        </div>
+      </div>
+      <div class="confidence-track">
+        <div class="confidence-fill" id="confidence-fill"></div>
+      </div>
+      <div class="confidence-meta">
+        <span>Négatif</span>
+        <span>Positif</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="history-section" id="history-section" style="display:none">
+    <div class="history-header">
+      <span class="history-title">Historique de session</span>
+      <button class="clear-btn" id="clear-btn">Effacer</button>
+    </div>
+    <div class="history-list" id="history-list"></div>
+  </div>
+</main>
+
+<footer>
+  <div class="footer-info">
+    <span class="status-dot" id="status-dot"></span>
+    <span id="status-text">Verification de l'API...</span>
+  </div>
+  <div class="footer-info">
+    <a href="/docs" style="color:var(--muted);text-decoration:none;transition:color 0.15s"
+       onmouseover="this.style.color='var(--accent)'"
+       onmouseout="this.style.color='var(--muted)'">
+      Documentation
+    </a>
+  </div>
+</footer>
+
+<script>
+  const API = ''; 
+  const textarea    = document.getElementById('input-texte');
+  const btnAnalyze  = document.getElementById('btn-analyze');
+  const resultWrap  = document.getElementById('result-wrapper');
+  const verdict     = document.getElementById('result-verdict');
+  const scoreVal    = document.getElementById('score-value');
+  const confFill    = document.getElementById('confidence-fill');
+  const errorMsg    = document.getElementById('error-msg');
+  const statusDot   = document.getElementById('status-dot');
+  const statusText  = document.getElementById('status-text');
+  const histSection = document.getElementById('history-section');
+  const histList    = document.getElementById('history-list');
+  const clearBtn    = document.getElementById('clear-btn');
+
+  let history = [];
+
+  //  Health check au chargement 
+  async function checkHealth() {
+    try {
+      const r = await fetch(`${API}/health`);
+      if (r.ok) {
+        const d = await r.json();
+        statusDot.className  = 'status-dot online';
+        statusText.textContent = `API en ligne`;
+      } else {
+        throw new Error();
+      }
+    } catch {
+      statusDot.className  = 'status-dot offline';
+      statusText.textContent = 'API hors ligne — lancez uvicorn 02_serve:app';
+    }
+  }
+
+  //  Analyser 
+  async function analyser(texte) {
+    showError('');
+    btnAnalyze.disabled = true;
+    btnAnalyze.textContent = 'Analyse en cours...';
+    btnAnalyze.classList.add('scanning');
+
+    try {
+      const r = await fetch(`${API}/predict`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texte }),
+      });
+
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: `Erreur ${r.status}` }));
+        throw new Error(err.detail || `Erreur ${r.status}`);
+      }
+
+      const data = await r.json();
+      afficherResultat(data);
+      ajouterHistorique(data);
+
+    } catch (e) {
+      showError(e.message || 'Erreur de connexion a l\'API.');
+    } finally {
+      btnAnalyze.disabled = false;
+      btnAnalyze.textContent = 'Analyser le sentiment';
+      setTimeout(() => btnAnalyze.classList.remove('scanning'), 700);
+    }
+  }
+
+  function afficherResultat(data) {
+    const cls = data.positif ? 'pos' : 'neg';
+    const pct = Math.round(data.score * 100);
+
+    verdict.textContent = data.positif ? 'Positif' : 'Negatif';
+    verdict.className   = `result-verdict ${cls}`;
+    scoreVal.textContent = `${pct}%`;
+
+    confFill.className = `confidence-fill ${cls}`;
+    // Reset puis anime
+    confFill.style.width = '0%';
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        confFill.style.width = `${pct}%`;
+      });
+    });
+
+    resultWrap.classList.add('visible');
+    resultWrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function ajouterHistorique(data) {
+    history.unshift(data);
+    if (history.length > 6) history.pop();
+    renderHistorique();
+  }
+
+  function renderHistorique() {
+    if (history.length === 0) {
+      histSection.style.display = 'none';
+      return;
+    }
+    histSection.style.display = 'block';
+    histList.innerHTML = '';
+    history.forEach(item => {
+      const cls = item.positif ? 'pos' : 'neg';
+      const pct = Math.round(item.score * 100);
+      const el  = document.createElement('div');
+      el.className = `history-item ${cls}`;
+      el.innerHTML = `
+        <div class="history-dot ${cls}"></div>
+        <div class="history-text">${escapeHtml(item.texte)}</div>
+        <div class="history-pct">${pct}%</div>
+      `;
+      el.addEventListener('click', () => {
+        textarea.value = item.texte;
+        textarea.focus();
+        afficherResultat(item);
+      });
+      histList.appendChild(el);
+    });
+  }
+
+  function showError(msg) {
+    if (msg) {
+      errorMsg.textContent = msg;
+      errorMsg.classList.add('visible');
+    } else {
+      errorMsg.classList.remove('visible');
+    }
+  }
+
+  function escapeHtml(t) {
+    return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  //  Evenements 
+  btnAnalyze.addEventListener('click', () => {
+    const t = textarea.value.trim();
+    if (!t) { showError('Le texte ne peut pas etre vide.'); return; }
+    analyser(t);
+  });
+
+  textarea.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      btnAnalyze.click();
+    }
+  });
+
+  document.querySelectorAll('.exemple-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      textarea.value = btn.dataset.txt;
+      textarea.focus();
+      showError('');
+    });
+  });
+
+  clearBtn.addEventListener('click', () => {
+    history = [];
+    renderHistorique();
+    resultWrap.classList.remove('visible');
+  });
+
+  //  Init 
+  checkHealth();
+</script>
+</body>
+</html>

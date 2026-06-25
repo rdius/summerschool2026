@@ -87,12 +87,8 @@ def preparer_donnees(dataset):
         textes : list[str]
         labels : list[int]
     """
-    # TODO 1 — Extraire les textes et les labels depuis dataset
-    # Indice : chaque élément du dataset est un tuple (texte, label)
-    # Indice : vous pouvez utiliser une list comprehension
-
-    textes = ...  # TODO : liste des textes
-    labels = ...  # TODO : liste des labels (0 ou 1)
+    textes = [texte for texte, label in dataset]
+    labels = [label for texte, label in dataset]
 
     return textes, labels
 
@@ -117,11 +113,7 @@ def creer_vectoriseur():
     Retourne :
         TfidfVectorizer
     """
-    # TODO 2 — Instancier et retourner un TfidfVectorizer
-    # Indice : from sklearn.feature_extraction.text import TfidfVectorizer
-    # Indice : TfidfVectorizer(ngram_range=..., max_features=...)
-
-    vectoriseur = ...  # TODO
+    vectoriseur = TfidfVectorizer(ngram_range=(1, 2), max_features=5000)
 
     return vectoriseur
 
@@ -148,15 +140,11 @@ def entrainer(vectoriseur, textes_train, labels_train):
         classifieur : LogisticRegression entraîné
         X_train     : matrice TF-IDF des données d'entraînement
     """
-    # TODO 3a — Vectoriser les données d'entraînement
-    # Indice : utiliser fit_transform (pas seulement transform) pour apprendre le vocabulaire
-    X_train = ...  # TODO
+    # fit_transform : apprend le vocabulaire ET transforme en une seule passe
+    X_train = vectoriseur.fit_transform(textes_train)
 
-    # TODO 3b — Créer et entraîner un LogisticRegression
-    # Indice : LogisticRegression(max_iter=1000)
-    # Indice : classifieur.fit(X_train, labels_train)
-    classifieur = ...  # TODO
-    # TODO : entraîner le classifieur
+    classifieur = LogisticRegression(max_iter=1000)
+    classifieur.fit(X_train, labels_train)
 
     return classifieur, X_train
 
@@ -184,21 +172,15 @@ def evaluer(vectoriseur, classifieur, textes_test, labels_test):
     Retourne :
         accuracy : float entre 0 et 1
     """
-    # TODO 4a — Vectoriser les données de TEST
-    # ⚠️  Attention : utiliser .transform() et NON .fit_transform()
-    # Pourquoi ? Le vocabulaire doit être celui appris sur le train, pas recalculé
-    X_test = ...  # TODO
+    # .transform() uniquement : on applique le vocabulaire appris sur le train
+    X_test = vectoriseur.transform(textes_test)
 
-    # TODO 4b — Prédire les labels
-    predictions = ...  # TODO
+    predictions = classifieur.predict(X_test)
 
-    # TODO 4c — Afficher le rapport de classification
-    # Indice : classification_report(labels_test, predictions, target_names=["négatif","positif"])
     print("\n=== Rapport d'évaluation ===")
-    # TODO : afficher le rapport
+    print(classification_report(labels_test, predictions, target_names=["négatif", "positif"]))
 
-    # TODO 4d — Calculer et retourner l'accuracy
-    accuracy = ...  # TODO : accuracy_score(labels_test, predictions)
+    accuracy = accuracy_score(labels_test, predictions)
 
     return accuracy
 
@@ -227,22 +209,19 @@ def sauvegarder(vectoriseur, classifieur, accuracy):
     # Créer le répertoire si nécessaire
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
-    # TODO 5a — Sauvegarder le vectoriseur en pickle
-    # Indice : open(MODEL_DIR / "vectorizer.pkl", "wb") as f: pickle.dump(objet, f)
-    # TODO
+    with open(MODEL_DIR / "vectorizer.pkl", "wb") as f:
+        pickle.dump(vectoriseur, f)
 
-    # TODO 5b — Sauvegarder le classifieur en pickle
-    # TODO
+    with open(MODEL_DIR / "classifier.pkl", "wb") as f:
+        pickle.dump(classifieur, f)
 
-    # TODO 5c — Créer et sauvegarder les métadonnées en JSON
-    # Le dictionnaire meta doit contenir :
-    #   "type"     : "tfidf+logreg"
-    #   "classes"  : ["négatif", "positif"]
-    #   "accuracy" : la valeur de accuracy (float)
     meta = {
-        # TODO : compléter le dictionnaire
+        "type": "tfidf+logreg",
+        "classes": ["négatif", "positif"],
+        "accuracy": accuracy,
     }
-    # TODO : écrire meta dans MODEL_DIR / "meta.json" en JSON
+    with open(MODEL_DIR / "meta.json", "w", encoding="utf-8") as f:
+        json.dump(meta, f, ensure_ascii=False, indent=2)
 
     print(f"\n✓ Modèle sauvegardé dans {MODEL_DIR}/")
     print(f"  • vectorizer.pkl")
@@ -284,4 +263,4 @@ if __name__ == "__main__":
     print("\n[5/5] Sauvegarde des artefacts de déploiement...")
     sauvegarder(vectoriseur, classifieur, accuracy)
 
-    print("\n✅  Entraînement terminé ! Passez à 02_serve.py")
+    print("\n  Entraînement terminé ! Passez à 02_serve.py")
